@@ -20,7 +20,7 @@ namespace ETLWebApi.Services
 
         public async Task ImportDataAsync()
         {
-            string filePath = "sample-cab-data. csv";
+            string filePath = "sample-cab-data.csv";
             string[] columnsToRead = { "tpep_pickup_datetime", "tpep_dropoff_datetime", "passenger_count", "trip_distance", "store_and_fwd_flag", "PULocationID",
                 "DOLocationID", "fare_amount", "tip_amount" }; // Specify columns you want to read
             List<ETLData> data = new List<ETLData>();
