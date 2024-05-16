@@ -1,7 +1,9 @@
-﻿using ETLWebApi.Models;
+﻿using CsvHelper;
+using ETLWebApi.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.VisualBasic.FileIO;
+using System.Globalization;
 
 namespace ETLWebApi.Services
 {
@@ -16,51 +18,30 @@ namespace ETLWebApi.Services
             _cache = cache;
         }
 
-        public async Task ImportData()
+        public async Task ImportDataAsync()
         {
-            string filePath = "sample-cab-data.csv";
+            string filePath = "sample-cab-data. csv";
             string[] columnsToRead = { "tpep_pickup_datetime", "tpep_dropoff_datetime", "passenger_count", "trip_distance", "store_and_fwd_flag", "PULocationID",
-        "DOLocationID", "fare_amount", "tip_amount" }; // Specify columns you want to read
-
-            List<string[]> data = ReadColumnsFromCSV(filePath, columnsToRead);
-
-            int batchSize = 1000; // Set your preferred batch size
-
-            List<ETLData> etlDataList = new List<ETLData>();
-
-            foreach (var record in data)
+                "DOLocationID", "fare_amount", "tip_amount" }; // Specify columns you want to read
+            List<ETLData> data = new List<ETLData>();
+            try
             {
-                ETLData etlData = new ETLData
-                {
-                    tpep_pickup_datetime = Convert.ToDateTime(record[0]),
-                    tpep_dropoff_datetime = Convert.ToDateTime(record[1]),
-                    passenger_count = Convert.ToInt32(record[2]),
-                    trip_distance = Convert.ToDouble(record[3]),
-                    store_and_fwd_flag = record[4],
-                    PULocationID = Convert.ToInt32(record[5]),
-                    DOLocationID = Convert.ToInt32(record[6]),
-                    fare_amount = Convert.ToDouble(record[7]),
-                    tip_amount = Convert.ToDouble(record[8])
-                };
-
-                etlDataList.Add(etlData);
-
-                if (etlDataList.Count >= batchSize)
-                {
-                    await InsertBatchAsync(etlDataList, _context);
-                    etlDataList.Clear();
-                }
-            }
-
-            if (etlDataList.Any())
+                data = ReadColumnsFromCSV(filePath, columnsToRead);
+            } 
+            catch (Exception ex)
             {
-                await InsertBatchAsync(etlDataList, _context);
+                throw new Exception("Something wrong with the file!");
             }
+            // Write duplicates to a file and remove them
+            WriteAndRemoveDuplicates(data);
+
+            // Insert data into the database in batches
+            await InsertDataInBatchesAsync(data);
         }
 
-        private static List<string[]> ReadColumnsFromCSV(string filePath, string[] columnsToRead)
+        private List<ETLData> ReadColumnsFromCSV(string filePath, string[] columnsToRead)
         {
-            var result = new List<string[]>();
+            var result = new List<ETLData>();
 
             using (TextFieldParser parser = new TextFieldParser(filePath))
             {
@@ -94,24 +75,112 @@ namespace ETLWebApi.Services
                 while (!parser.EndOfData)
                 {
                     string[] fields = parser.ReadFields();
-                    string[] selectedFields = new string[columnIndices.Count];
+                    ETLData etlData = new ETLData();
+
                     for (int i = 0; i < columnIndices.Count; i++)
                     {
-                        selectedFields[i] = fields[columnIndices[i]];
+                        switch (columnsToRead[i])
+                        {
+                            case "tpep_pickup_datetime":
+                            case "tpep_dropoff_datetime":
+                                DateTime.TryParseExact(fields[columnIndices[i]], "M/d/yyyy H:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime datetime);
+                                if (columnsToRead[i] == "tpep_pickup_datetime")
+                                    etlData.PickupDatetime = ConvertToUtc(datetime);
+                                else
+                                    etlData.DropoffDatetime = ConvertToUtc(datetime);
+                                break;
+                            case "passenger_count":
+                                if (int.TryParse(fields[columnIndices[i]], out int passengerCount))
+                                    etlData.PassengerCount = passengerCount;
+                                break;
+                            case "trip_distance":
+                                if (double.TryParse(fields[columnIndices[i]], out double tripDistance))
+                                    etlData.TripDistance = tripDistance;
+                                break;
+                            case "store_and_fwd_flag":
+                                etlData.StoreAndFwdFlag = fields[columnIndices[i]] == "N" ? "No" : "Yes";
+                                break;
+                            case "PULocationID":
+                                if (int.TryParse(fields[columnIndices[i]], out int puLocationID))
+                                    etlData.PULocationID = puLocationID;
+                                break;
+                            case "DOLocationID":
+                                if (int.TryParse(fields[columnIndices[i]], out int doLocationID))
+                                    etlData.DOLocationID = doLocationID;
+                                break;
+                            case "fare_amount":
+                                if (double.TryParse(fields[columnIndices[i]], out double fareAmount))
+                                    etlData.FareAmount = fareAmount;
+                                break;
+                            case "tip_amount":
+                                if (double.TryParse(fields[columnIndices[i]], out double tipAmount))
+                                    etlData.TipAmount = tipAmount;
+                                break;
+                                // Add cases for other columns if needed
+                        }
                     }
-                    result.Add(selectedFields);
+
+                    TrimStringProperties(etlData);
+                    result.Add(etlData);
                 }
             }
 
             return result;
         }
 
-        private async Task InsertBatchAsync(List<ETLData> etlDataList, ETLDbContext dbContext)
+        private DateTime ConvertToUtc(DateTime estDateTime)
+        {
+            // Convert EST to UTC
+            TimeZoneInfo estTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+            return TimeZoneInfo.ConvertTimeToUtc(estDateTime, estTimeZone);
+        }
+
+        private void WriteAndRemoveDuplicates(List<ETLData> data)
+        {
+            var groupedData = data.GroupBy(x => new { x.PickupDatetime, x.DropoffDatetime, x.PassengerCount });
+
+            var duplicates = groupedData.Where(g => g.Count() > 1).SelectMany(g => g).ToList();
+
+            if (duplicates.Any())
+            {
+                using (var writer = new StreamWriter("duplicates.csv"))
+                using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
+                {
+                    csv.WriteRecords(duplicates);
+                }
+
+                // Remove duplicates from the original data list
+                foreach (var group in groupedData)
+                {
+                    if (group.Count() > 1)
+                    {
+                        // Keep only the first record (remove duplicates)
+                        var firstRecord = group.First();
+                        data.RemoveAll(d => d.PickupDatetime == firstRecord.PickupDatetime &&
+                                             d.DropoffDatetime == firstRecord.DropoffDatetime &&
+                                             d.PassengerCount == firstRecord.PassengerCount);
+                    }
+                }
+            }
+        }
+
+        private async Task InsertDataInBatchesAsync(List<ETLData> data)
+        {
+            int batchSize = 1000; // Set your preferred batch size
+
+            for (int i = 0; i < data.Count; i += batchSize)
+            {
+                var batch = data.Skip(i).Take(batchSize).ToList();
+                await InsertBatchAsync(batch);
+            }
+        }
+
+        private async Task InsertBatchAsync(List<ETLData> etlDataList)
         {
             try
             {
-                await dbContext.ETLDatas.AddRangeAsync(etlDataList);
-                await dbContext.SaveChangesAsync();
+                await _context.ETLDatas.AddRangeAsync(etlDataList);
+                await _context.SaveChangesAsync();
             }
             catch (Exception ex)
             {
@@ -120,14 +189,20 @@ namespace ETLWebApi.Services
             }
         }
 
-        public async Task<int> FindPULocationId()
+        private void TrimStringProperties(ETLData etlData)
+        {
+            etlData.StoreAndFwdFlag = etlData.StoreAndFwdFlag?.Trim();
+            // Trim other string properties as needed
+        }
+
+        public async Task<int> FindPULocationIdAsync()
         {
             var result = await _context.ETLDatas
                 .GroupBy(d => d.PULocationID)
                 .Select(g => new
                 {
                     PULocationID = g.Key,
-                    AverageTipAmount = g.Average(d => d.tip_amount)
+                    AverageTipAmount = g.Average(d => d.TipAmount)
                 })
                 .OrderByDescending(x => x.AverageTipAmount)
                 .FirstOrDefaultAsync();
@@ -135,33 +210,28 @@ namespace ETLWebApi.Services
             return result?.PULocationID ?? -1; // Return -1 if no data found
         }
 
-        public async Task<IEnumerable<ETLData>> FindLongestTripDistance()
+        public async Task<IEnumerable<ETLData>> FindLongestTripDistanceAsync()
         {
             var result = await _context.ETLDatas
-                .OrderByDescending(d => d.trip_distance)
+                .OrderByDescending(d => d.TripDistance)
                 .Take(100)
                 .ToListAsync();
 
             return result;
         }
 
-        public async Task<IEnumerable<ETLData>> FindLongestTimeSpentTravelling()
+        public IEnumerable<ETLData> FindLongestTimeSpentTravelling()
         {
-            var result = await _context.ETLDatas
-                .Select(d => new
-                {
-                    ETLData = d,
-                    TimeSpentTraveling = (d.tpep_dropoff_datetime - d.tpep_pickup_datetime).TotalSeconds
-                })
-                .OrderByDescending(d => d.TimeSpentTraveling)
+            var result = _context.ETLDatas
+                .AsEnumerable() // Switch to LINQ to Objects
+                .OrderByDescending(e => (e.DropoffDatetime - e.PickupDatetime).TotalSeconds)
                 .Take(100)
-                .Select(d => d.ETLData)
-                .ToListAsync();
+                .ToList();
 
             return result;
         }
 
-        public async Task<IEnumerable<ETLData>> GetDatas(int pULocationId)
+        public async Task<IEnumerable<ETLData>> GetDatasAsync(int pULocationId)
         {
             var result = await _context.ETLDatas
                 .Where(d => d.PULocationID == pULocationId)

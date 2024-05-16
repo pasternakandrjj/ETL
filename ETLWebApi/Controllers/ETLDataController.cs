@@ -1,3 +1,4 @@
+using ETLWebApi.Models;
 using ETLWebApi.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,22 +18,43 @@ namespace ETLWebApi.Controllers
             _iETLDataService = iETLDataService;
         }
 
+        //7129 rows being written
         [HttpGet("ImportData")]
-        public void ImportData()
+        public async Task<IActionResult> ImportDataAsync()
         {
-            _iETLDataService.ImportData();
+            try
+            {
+                await _iETLDataService.ImportDataAsync();
+                return Ok("Data imported successfully");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, "Error importing data: " + ex.Message);
+            }
         }
 
-        [HttpGet("FindLocationWithHighestTipAmount")]
+        [HttpGet("LocationWithHighestTipAmount")]
         public async Task<int> FindLocationWithHighestTipAmountAsync()
         {
-            return await _iETLDataService.FindPULocationId();
+            return await _iETLDataService.FindPULocationIdAsync();
         }
 
-        //[HttpGet("GenerateRectangles")]
-        //public async Task<IEnumerable<Rectangle>> GenerateRectanglesAsync()
-        //{
-        //    return await _iETLDataService.ImportData();
-        //}
+        [HttpGet("LongestTripsByDistance")]
+        public async Task<IEnumerable<ETLData>> FindLongestTripDistanceAsync()
+        {
+            return await _iETLDataService.FindLongestTripDistanceAsync();
+        }
+
+        [HttpGet("LongestTripsByTimeSpent")]
+        public IEnumerable<ETLData> FindLongestTimeSpentTravelling()
+        {
+            return _iETLDataService.FindLongestTimeSpentTravelling();
+        }
+
+        [HttpGet("SearchByPULocationId")]
+        public async Task<IEnumerable<ETLData>> GetDatasFilteredByPULocationIdAsync(int pULocationId)
+        {
+            return await _iETLDataService.GetDatasAsync(pULocationId);
+        }
     }
 }

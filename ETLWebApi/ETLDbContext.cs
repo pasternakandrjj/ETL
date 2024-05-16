@@ -5,9 +5,7 @@ namespace ETLWebApi
 {
     public class ETLDbContext : DbContext
     {
-        public ETLDbContext(DbContextOptions<ETLDbContext> options) : base(options)
-        {
-        }
+        public ETLDbContext(DbContextOptions<ETLDbContext> options) : base(options) { }
 
         public DbSet<ETLData> ETLDatas { get; set; }
 
@@ -15,11 +13,14 @@ namespace ETLWebApi
         {
             base.OnModelCreating(modelBuilder);
 
-            //modelBuilder.Entity<ETLData>()
-            //    .HasIndex(r => r.Width);
+            modelBuilder.Entity<ETLData>()
+                .HasIndex(r => r.PULocationID);
 
-            //modelBuilder.Entity<ETLData>()
-            //    .HasIndex(r => r.Height);
+            modelBuilder.Entity<ETLData>()
+                .HasIndex(r => r.PickupDatetime);
+
+            modelBuilder.Entity<ETLData>()
+                .HasIndex(r => r.DropoffDatetime);
         }
     }
 }

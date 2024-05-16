@@ -3,22 +3,23 @@
     public class ETLData
     {
         public int Id { get; set; }
-        public DateTime tpep_pickup_datetime { get; set; }
 
-        public DateTime tpep_dropoff_datetime { get; set; }
+        public DateTime PickupDatetime { get; set; }
 
-        public int passenger_count { get; set; }
+        public DateTime DropoffDatetime { get; set; }
 
-        public double trip_distance { get; set; }
+        public int PassengerCount { get; set; }
 
-        public string store_and_fwd_flag { get; set; }
+        public double TripDistance { get; set; }
+
+        public string? StoreAndFwdFlag { get; set; }
 
         public int PULocationID { get; set; }
 
         public int DOLocationID { get; set; }
 
-        public double fare_amount { get; set; }
+        public double FareAmount { get; set; }
 
-        public double tip_amount { get; set; }
+        public double TipAmount { get; set; }
     }
 }

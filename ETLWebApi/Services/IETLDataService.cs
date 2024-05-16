@@ -4,14 +4,14 @@ namespace ETLWebApi.Services
 {
     public interface IETLDataService
     {
-        Task ImportData();
+        Task ImportDataAsync();
 
-        Task<int> FindPULocationId();
+        Task<int> FindPULocationIdAsync();
 
-        Task<IEnumerable<ETLData>> FindLongestTripDistance();
+        Task<IEnumerable<ETLData>> FindLongestTripDistanceAsync();
 
-        Task<IEnumerable<ETLData>> FindLongestTimeSpentTravelling();
+        IEnumerable<ETLData> FindLongestTimeSpentTravelling();
 
-        Task<IEnumerable<ETLData>> GetDatas(int pULocationId);
+        Task<IEnumerable<ETLData>> GetDatasAsync(int pULocationId);
     }
 }
